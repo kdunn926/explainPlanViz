@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en" data-ng-app>
+  <head>
+    <meta charset="utf-8">
+    <script src="https://ajax.googleapis.com/ajax/libs/jquery/2.2.0/jquery.min.js"></script>
+    <!--script src="https://ajax.googleapis.com/ajax/libs/angularjs/1.4.9/angular.min.js"></script-->
+    <!--script src="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.6/js/bootstrap.min.js"></script-->
+    <!--script src="static/js/angularapp.js"></script-->
+    <title>Explain Plan Viz Tool</title>
+    <!--link rel="stylesheet" href="//netdna.bootstrapcdn.com/bootstrap/3.1.1/css/bootstrap.min.css"-->
+    <link rel="shortcut icon" href="static/images/favicon.ico">
+    <link rel="stylesheet" href="static/css/app.css" />
+  </head>
+  <body>
+
+    <!-- Flask-specific directive -->
+    {% raw %}
+
+    <div style="text-align:center;" id="graph">
+
+        <div id="header">
+          <h1>Explain Plan Viz Tool</h1>
+        </div>
+
+        <!--h4>Options</h4-->
+          <!-- Hiding the options, since most don't play nice -->
+          <div style="visibility:hidden;" id="options">
+            <label id="engine">
+              Engine:
+              <select>
+                <option>circo</option>
+                <option selected>dot</option>
+                <option>fdp</option>
+                <option>neato</option>
+                <option>osage</option>
+                <option>twopi</option>
+              </select>
+            </label>
+            
+            <label id="format">
+              Format:
+              <select>
+                <option >svg</option>
+                <option selected>png-image-element</option>
+                <option>xdot</option>
+                <option>plain</option>
+                <option>ps</option>
+              </select>
+            </label>
+            
+            <label id="raw">
+              <input type="checkbox"> Show Graphviz Dot output
+            </label>
+          </div>
+
+        <div id="output">
+          <div id="error"></div>
+        </div>
+
+        <hr/>
+        <p>
+          <button type="button" class="btn btn-success" onclick="doPost()">
+              <b class="icon-plus-sign"></b>Do it!
+          </button>
+        </p>
+
+        <textarea rows=30 cols=150 id="explainstring" onchange=";">
+ Gather Motion 32:1  (slice1; segments: 32)  (cost=0.00..191.06 rows=6306 width=491)
+   ->  Seq Scan on hist_cust_sgmnt_dim  (cost=0.00..191.06 rows=198 width=491)
+        </textarea>
+
+    <script type="text/javascript" id="post">
+        var dot = "";
+        function doPost() {
+            var data = { "plan" : $("#explainstring").val() };
+            $.ajax({
+                type: "POST",
+                url: "/process",
+                processData: false,
+                contentType: 'application/json',
+                data: JSON.stringify(data),
+                success: function(r) {
+                   console.log("Sweet success");
+                   //console.log(r['dot']);
+                   dot = r['dot'];
+                   updateGraph();
+                   updateOutput();
+                }
+            });
+        }
+    </script>
+
+    <!--script src="static/js/ace.js"></script-->
+    <script src="static/js/viz.js"></script>
+    <script>
+    
+    //var editor = ace.edit("editor");
+    //editor.getSession().setMode("ace/mode/dot");
+
+    var parser = new DOMParser();
+    var worker;
+    var result;
+
+    function updateGraph() {
+      if (worker) {
+        worker.terminate();
+      }
+
+      document.querySelector("#output").classList.add("working");
+      document.querySelector("#output").classList.remove("error");
+
+      worker = new Worker("static/js/worker.js");
+
+      worker.onmessage = function(e) {
+        document.querySelector("#output").classList.remove("working");
+        document.querySelector("#output").classList.remove("error");
+        
+        result = e.data;
+        
+        updateOutput();
+      }
+
+      worker.onerror = function(e) {
+        document.querySelector("#output").classList.remove("working");
+        document.querySelector("#output").classList.add("error");
+        
+        var message = e.message === undefined ? "An error occurred while processing the graph input." : e.message;
+        
+        var error = document.querySelector("#error");
+        while (error.firstChild) {
+          error.removeChild(error.firstChild);
+        }
+        
+        document.querySelector("#error").appendChild(document.createTextNode(message));
+        
+        console.error(e);
+        e.preventDefault();
+      }
+      
+      var params = {
+        src: dot, //editor.getSession().getDocument().getValue(),
+        options: {
+          engine: document.querySelector("#engine select").value,
+          format: document.querySelector("#format select").value
+        }
+      };
+      
+      // Instead of asking for png-image-element directly, which we can't do in a worker,
+      // ask for SVG and convert when updating the output.
+      
+      if (params.options.format == "png-image-element") {
+        params.options.format = "svg";
+      }
+      
+      worker.postMessage(params);
+    }
+    
+    function updateOutput() {
+      var graph = document.querySelector("#output");
+
+      var svg = graph.querySelector("svg");
+      if (svg) {
+        graph.removeChild(svg);
+      }
+
+      var text = graph.querySelector("#text");
+      if (text) {
+        graph.removeChild(text);
+      }
+
+      var img = graph.querySelector("img");
+      if (img) {
+        graph.removeChild(img);
+      }
+      
+      if (!result) {
+        return;
+      }
+      
+      if (document.querySelector("#format select").value == "svg" && !document.querySelector("#raw input").checked) {
+        var svg = parser.parseFromString(result, "image/svg+xml");
+        graph.appendChild(svg.documentElement);
+      } else if (document.querySelector("#format select").value == "png-image-element") {
+        var image = Viz.svgXmlToPngImageElement(result);
+        graph.appendChild(image);
+      } else {
+        var text = document.createElement("div");
+        text.id = "text";
+        text.appendChild(document.createTextNode(result));
+        graph.appendChild(text);
+      }
+    }
+
+    //editor.on("change", function() {
+    //  updateGraph();
+    //});
+    
+    document.querySelector("#engine select").addEventListener("change", function() {
+      updateGraph();
+    });
+
+    document.querySelector("#format select").addEventListener("change", function() {
+      if (document.querySelector("#format select").value === "svg") {
+        document.querySelector("#raw").classList.remove("disabled");
+        document.querySelector("#raw input").disabled = false;
+      } else {
+        document.querySelector("#raw").classList.add("disabled");
+        document.querySelector("#raw input").disabled = true;
+      }
+      
+      updateGraph();
+    });
+
+    document.querySelector("#raw input").addEventListener("change", function() {
+      updateOutput();
+    });
+    
+    //updateGraph();
+    
+    </script>
+
+    <!-- Flask-specific directive -->
+    {% endraw %}
+
+
+    </div>
+
+  </body>
+</html>
