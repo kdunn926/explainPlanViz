@@ -8,6 +8,9 @@ from math import ceil
 
 # For graph representation
 import pygraphviz as pgv
+import base64
+import tempfile 
+import sys
 
 # For Cloud Foundry
 import os 
@@ -239,7 +242,15 @@ def textToDot(theExplain):
     # Add the final child operation and edge to parent
     pushEdgeFor(currentOperation, attrDict, rowList)
 
-    return graph.to_string()
+    theTempfile = tempfile.NamedTemporaryFile()
+
+    graph.draw(theTempfile.name, prog='dot', format='svg')
+
+    with open(theTempfile.name, "rb") as theImage:
+        encoded_string = base64.b64encode(theImage.read())
+
+    return encoded_string
+    #return graph.to_string()
 
 
 @app.route('/process', methods=['POST'])
@@ -261,7 +272,8 @@ def process():
     
     content = request.get_json(silent=True)
 
-    return jsonify(dot=textToDot(content['plan']))
+    return jsonify(png=textToDot(content['plan']))
+    #return jsonify(dot=textToDot(content['plan']))
 
 
 @app.route('/')
@@ -273,5 +285,11 @@ if port is None:
     port = 5000
 
 if __name__ == '__main__':
-    #app.debug = True
+    app.debug = True
+
+    sys.path.append("/home/vcap/app/.heroku/vendor/bin")
+    os.environ['PATH'] = os.environ['PATH'] + ":/home/vcap/app/.heroku/vendor/bin"
+
+    print os.path.isfile("/home/vcap/app/.heroku/vendor/bin/dot")
+
     app.run(host='0.0.0.0', port=int(port))

@@ -82,9 +82,15 @@
                 success: function(r) {
                    console.log("Sweet success");
                    //console.log(r['dot']);
-                   dot = r['dot'];
-                   updateGraph();
-                   updateOutput();
+                   //dot = r['dot'];
+                   $('#svg').remove();
+                   // added `width` , `height` properties to `img` attributes
+                   $("<img>", { "src": "data:image/svg+xml;base64," + r['png'], 
+                                "id": "svg",
+                                "max-width": "100%", 
+                                "max-height": "auto"}).appendTo("#output");
+                   //updateGraph();
+                   //updateOutput();
                 }
             });
         }

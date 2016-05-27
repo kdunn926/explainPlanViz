@@ -1,7 +1,7 @@
 @font-face
 {
 font-family: pivotal;
-src: url('static/fonts/FreigSanProLig.otf');
+src: url('/static/fonts/FreigSanProLig.otf');
 }
 
 .btn {
